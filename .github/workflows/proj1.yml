@@ -15,6 +15,12 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      S3_ENDPOINT: https://${{ secrets.PROJ1_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      S3_ACCESS_KEY_ID: ${{ secrets.PROJ1_R2_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.PROJ1_R2_SECRET_ACCESS_KEY }}
+      S3_BUCKET: ${{ secrets.PROJ1_R2_BUCKET }}
+      S3_REGION: auto
     strategy:
       fail-fast: false
       matrix:
@@ -62,28 +68,43 @@ jobs:
           sudo apt-get install -y libasound2-dev libappindicator3-dev \
             libwebkit2gtk-4.1-dev librsvg2-dev patchelf
 
-      - run: bun install --frozen-lockfile
+      - name: Install
+        run: bun install --frozen-lockfile >> build.log 2>&1
 
       - name: Build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.PROJ1_SIGNING_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.PROJ1_SIGNING_PASSWORD }}
-        run: bunx tauri build --bundles ${{ matrix.bundles }}
+        run: bunx tauri build --bundles ${{ matrix.bundles }} >> build.log 2>&1
 
       - name: Upload to R2
         env:
-          S3_ENDPOINT: https://${{ secrets.PROJ1_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-          S3_ACCESS_KEY_ID: ${{ secrets.PROJ1_R2_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.PROJ1_R2_SECRET_ACCESS_KEY }}
-          S3_BUCKET: ${{ secrets.PROJ1_R2_BUCKET }}
-          S3_REGION: auto
           PLATFORM: ${{ matrix.platform }}
           PATTERN: ${{ matrix.pattern }}
-        run: bun scripts/ci-upload.ts
+        run: bun scripts/ci/upload.ts >> build.log 2>&1
+
+      - name: Report failure
+        if: failure()
+        env:
+          LOG_FILE: build.log
+          LOG_KEY: logs/${{ github.run_id }}-${{ matrix.platform }}.log
+        run: |
+          if [ -f build.log ]; then
+            bun scripts/ci/log.ts || true
+            echo "build failed; log at $LOG_KEY"
+          else
+            echo "failed before build; no log captured"
+          fi
 
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      S3_ENDPOINT: https://${{ secrets.PROJ1_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      S3_ACCESS_KEY_ID: ${{ secrets.PROJ1_R2_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.PROJ1_R2_SECRET_ACCESS_KEY }}
+      S3_BUCKET: ${{ secrets.PROJ1_R2_BUCKET }}
+      S3_REGION: auto
     steps:
       - uses: actions/checkout@v6
         with:
@@ -96,10 +117,17 @@ jobs:
           bun-version: 1.3.14
 
       - name: Assemble latest.json
+        run: bun scripts/ci/manifest.ts >> build.log 2>&1
+
+      - name: Report failure
+        if: failure()
         env:
-          S3_ENDPOINT: https://${{ secrets.PROJ1_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-          S3_ACCESS_KEY_ID: ${{ secrets.PROJ1_R2_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.PROJ1_R2_SECRET_ACCESS_KEY }}
-          S3_BUCKET: ${{ secrets.PROJ1_R2_BUCKET }}
-          S3_REGION: auto
-        run: bun scripts/ci-manifest.ts
+          LOG_FILE: build.log
+          LOG_KEY: logs/${{ github.run_id }}-manifest.log
+        run: |
+          if [ -f build.log ]; then
+            bun scripts/ci/log.ts || true
+            echo "manifest failed; log at $LOG_KEY"
+          else
+            echo "failed before manifest; no log captured"
+          fi
