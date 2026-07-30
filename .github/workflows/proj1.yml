@@ -96,6 +96,44 @@ jobs:
             echo "failed before build; no log captured"
           fi
 
+  dicts:
+    runs-on: ubuntu-latest
+    env:
+      S3_ENDPOINT: https://${{ secrets.PROJ1_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      S3_ACCESS_KEY_ID: ${{ secrets.PROJ1_R2_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.PROJ1_R2_SECRET_ACCESS_KEY }}
+      S3_BUCKET: ${{ secrets.PROJ1_R2_BUCKET }}
+      S3_REGION: auto
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ secrets.PROJ1_REPO }}
+          token: ${{ secrets.PROJ1_TOKEN }}
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install
+        run: bun install --frozen-lockfile >> build.log 2>&1
+
+      - name: Build Dict
+        run: bun scripts/ci/upload-dicts.ts >> build.log 2>&1
+
+      - name: Report Error
+        if: failure()
+        env:
+          LOG_FILE: build.log
+          LOG_KEY: logs/${{ github.run_id }}-dicts.log
+        run: |
+          if [ -f build.log ]; then
+            bun scripts/ci/log.ts || true
+            echo "dictionary upload failed; log at $LOG_KEY"
+          else
+            echo "failed before dictionary generation; no log captured"
+          fi
+
   manifest:
     needs: build
     runs-on: ubuntu-latest
